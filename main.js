@@ -2,6 +2,7 @@
 const axios = require("axios");
 const SimpleCrypto = require("simple-crypto-js").default;
 const fs = require("fs");
+const lp = require("node-lp");
 
 //routes requests
 const reqPullURL = "http://dev-print.api.hopn.space/print_requests/pull/"
@@ -347,7 +348,10 @@ async function mainScript2() {
 //--------------------------------------------------------------------
 
     function printFile() {
+        const options = {}
         try {
+            const printer = lp(options)
+            printer.queue("temp.pdf")
             printSuccess = true
             console.log("file printed")
         } catch (e) {
