@@ -334,7 +334,7 @@ async function mainScript2() {
             const simpleDecryptFile = new SimpleCrypto(decryptedPin)
             const decryptedText = simpleDecryptFile.decrypt(encryptedText)
             console.log("file decrypted")
-            await fs.writeFile("temp.pdf", decryptedText.toString(), 'binary', () => console.log("file downloaded"))
+            await fs.writeFile("file/temp.pdf", decryptedText.toString(), 'binary', () => console.log("file downloaded"))
             fileDecrypted = true
 
         } catch (e) {
