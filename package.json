@@ -11,6 +11,6 @@
   "license": "ISC",
   "dependencies": {
     "axios": "^0.26.1",
-    "simple-crypto-js": "^3.0.1",
+    "simple-crypto-js": "^3.0.1"
   }
 }
