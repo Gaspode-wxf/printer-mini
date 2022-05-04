@@ -12,6 +12,5 @@
   "dependencies": {
     "axios": "^0.26.1",
     "simple-crypto-js": "^3.0.1",
-    "node-lp": "^1.0.2"
   }
 }
