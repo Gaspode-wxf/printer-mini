@@ -33,11 +33,11 @@ const printer = {
 }
 
 let currentStatus = {
-    "ink_level_cyan":99,
+    "ink_level_cyan":100,
     "ink_level_magenta":100,
-    "ink_level_yellow":65,
-    "ink_level_black":1,
-    "is_available":0
+    "ink_level_yellow":100,
+    "ink_level_black":100,
+    "is_available":1
 }
 
 
