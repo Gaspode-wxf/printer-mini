@@ -2,8 +2,7 @@
 const axios = require("axios");
 const SimpleCrypto = require("simple-crypto-js").default;
 const fs = require("fs");
-const lp = require("node-lp")
-const options = {}
+const pdfPrint = require("unix-print")
 
 //routes requests
 const reqPullURL = "http://dev-print.api.hopn.space/print_requests/pull/"
@@ -284,7 +283,7 @@ async function mainScript2() {
 
                 await deletePin(dataPin.id)
                     .then(() => {
-                        console.log("pin deleted")
+                        console.log("deletePin success")
                     })
                     .catch(() => {
                         console.log("deletePin rejected")
@@ -319,6 +318,7 @@ async function mainScript2() {
         let decryptedPin
         try {
             decryptedPin = simpleDecryptPin.decrypt(encryptedPin)
+
         } catch (e) {
             console.log("Pin decryption error " + e)
             return false
@@ -357,13 +357,12 @@ async function mainScript2() {
 
     async function printFile() {
         try {
-            console.log("file printed")
-            const printNode = lp(options)
-            printNode.queue("file/temp.pdf", () => {
-                console.log("coucou")
+            console.log("Print start")
+            await pdfPrint.print("file/temp.pdf").then(()=> {
+                printSuccess = true
+                console.log("print ended successfully")
             })
 
-            printSuccess = true
 
         } catch (e) {
             console.log("file not printed")
