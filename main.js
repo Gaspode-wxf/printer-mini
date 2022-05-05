@@ -2,6 +2,8 @@
 const axios = require("axios");
 const SimpleCrypto = require("simple-crypto-js").default;
 const fs = require("fs");
+const lp = require("node-lp")
+const options = {}
 
 //routes requests
 const reqPullURL = "http://dev-print.api.hopn.space/print_requests/pull/"
@@ -56,16 +58,16 @@ const delay = ms => new Promise(res => setTimeout(res, ms));
 
 console.log("__________________________________________________________")
 
-        mainScript2().then(() => {
-            console.log("MainScript fulfilled")
-            console.log("__________________________________________________________")
+mainScript2().then(() => {
+    console.log("MainScript fulfilled")
+    console.log("__________________________________________________________")
 
-        }).catch(reason => {
-            console.log(reason)
-            console.log("MainScript failed")
-            console.log("__________________________________________________________")
+}).catch(reason => {
+    console.log(reason)
+    console.log("MainScript failed")
+    console.log("__________________________________________________________")
 
-        })
+})
 
 
 
@@ -76,12 +78,9 @@ console.log("__________________________________________________________")
 // New version of main script, now in synchronous mode with better factorisation
 async function mainScript2() {
     // booleans
-    let requestFound = false;
     let pinCodeFound = false;
-    let fileDecrypted = false
-    let documentFound = false
     let pinTimeOut = false
-    let printSuccess = false;
+    let printSuccess = false
 
 
 // counters
@@ -190,6 +189,7 @@ async function mainScript2() {
 
     async function checkRequests() {
 
+
         reqAPITick++
         console.log("Searching for a print request : " + reqAPITick)
 
@@ -199,7 +199,6 @@ async function mainScript2() {
 
                 if (response.data.content.body.length !== 0) {
                     requestData = response.data.content.body[0]
-                    requestFound = true
                 } else {
                     console.log("No Request found")
                 }
@@ -208,7 +207,7 @@ async function mainScript2() {
                 requestFound = false
                 console.log(reason)
             })
-        await delay(timer)
+
     }
 
     //--------------------------------------------------------------------
@@ -221,12 +220,8 @@ async function mainScript2() {
             .then(async response => {
                 documentData = response.data.content.body.document
                 encryptedText = response.data.content.body.text
-                documentFound = true
-
-
             }).catch(() => {
                 console.log("no document found")
-                documentFound = false
             });
     }
 
@@ -286,17 +281,15 @@ async function mainScript2() {
                 pinCodeFound = true
                 pinAttempts++
                 pinAPITick = 0
-                try {
-                    await deletePin(dataPin.id)
-                        .then(() => {
-                            console.log("pin deleted")
-                        })
-                        .catch(() => {
-                            console.log("deletePin rejected")
-                        })
-                } catch (e) {
-                    console.log(e)
-                }
+
+                await deletePin(dataPin.id)
+                    .then(() => {
+                        console.log("pin deleted")
+                    })
+                    .catch(() => {
+                        console.log("deletePin rejected")
+                    })
+
             })
             .catch(async () => {
                 pinCodeFound = false
@@ -320,7 +313,7 @@ async function mainScript2() {
 
 //--------------------------------------------------------------------
 
-    async function decryptFile() {
+    async function processFile() {
         // first decrypt Pin
         const simpleDecryptPin = new SimpleCrypto(printerId)
         let decryptedPin
@@ -328,31 +321,53 @@ async function mainScript2() {
             decryptedPin = simpleDecryptPin.decrypt(encryptedPin)
         } catch (e) {
             console.log("Pin decryption error " + e)
+            return false
         }
         // then decrypt File
         try {
             const simpleDecryptFile = new SimpleCrypto(decryptedPin)
             const decryptedText = simpleDecryptFile.decrypt(encryptedText)
             console.log("file decrypted")
-            await fs.writeFile("file/temp.pdf", decryptedText.toString(), 'binary', () => console.log("file downloaded"))
-            fileDecrypted = true
+
+            // once the file is decrypted, save the file and when the file is saved, the file is printed
+            await fs.writeFile(
+                "./file/temp.pdf",
+                decryptedText.toString(),
+                'binary',
+                () => {
+                    console.log("file downloaded")
+                    printFile()
+                        .then(()=>{
+                            console.log("printFile success")
+                        })
+                        .catch(()=>{
+                            console.log("printFile rejected")
+                        })
+                })
+            return  true
 
         } catch (e) {
             console.log("file decryption error")
             console.log(e)
-            fileDecrypted = false
+            return  false
         }
     }
 
 //--------------------------------------------------------------------
 
-    function printFile() {
+    async function printFile() {
         try {
-            printSuccess = true
             console.log("file printed")
+            const printNode = lp(options)
+            printNode.queue("file/temp.pdf", () => {
+                console.log("coucou")
+            })
+
+            printSuccess = true
+
         } catch (e) {
+            console.log("file not printed")
             console.log(e)
-            printSuccess = false
         }
     }
 
@@ -447,10 +462,7 @@ async function mainScript2() {
 //--------------------------------------------------------------------
     function resetScript() {
         // booleans
-        requestFound = false;
         pinCodeFound = false;
-        fileDecrypted = false
-        documentFound = false
         pinTimeOut = false
         printSuccess = false;
 
@@ -478,8 +490,8 @@ async function mainScript2() {
         await delay(timer)
         await updateStatus()
             .then(()=>{
-            console.log("updateStatus fulfilled")
-        }).catch(()=>{
+                console.log("updateStatus fulfilled")
+            }).catch(()=>{
                 console.log("updateStatus rejected")})
     }
 
@@ -490,6 +502,11 @@ async function mainScript2() {
 
     // Main Script starts here
     do {
+
+        /** First : The script request the API for the Printer Status
+         * If there're none, the printer is initialized
+         * Then the status entry of this printer is updated or created
+         */
         do {
             try {
                 await checkDBStatus().then(() => {
@@ -510,6 +527,8 @@ async function mainScript2() {
                 console.log("error Status Check")
                 console.log(e)
             }
+            await delay(timer)
+
 
         } while (statusData === null || statusData === undefined)
 
@@ -524,130 +543,115 @@ async function mainScript2() {
             console.log("error updating status")
             console.log(e)
         }
+        /**
+         * There, the script loops API requests to find print requests
+         */
 
-        try {
-            do {
-                await checkRequests().then(() => {
-                    console.log("checkRequest fulfilled")
-                    console.log(requestData)
-                }).catch(reason => {
-                    console.log("checkRequest rejected")
-                    console.log(reason)
-                })
-            } while (!requestFound)
+        do {
+            await checkRequests().then(() => {
+                console.log("checkRequest fulfilled")
+                console.log(requestData)
+            }).catch(reason => {
+                console.log("checkRequest rejected")
+                console.log(reason)
+            })
+            await delay(timer)
+        } while (requestData===undefined || requestData===null)
 
-        } catch (e) {
-            console.log("check Request error")
-            console.log(e)
-        }
+        /**
+         * When the request is found, the script download the encrypted file
+         */
 
-        try {
-            await retrieveFile().then(() => {
+        const documentFound = async () => await retrieveFile()
+            .then(() => {
                 console.log("retrieveFile fulfilled")
+                return true
             }).catch(reason => {
                 console.log("retrieveFile rejected")
                 console.log(reason)
+                return false
             })
-        } catch (e) {
-            console.log("error retrieving file")
-            console.log(e)
-        }
-        if (documentFound) {
-            try {
 
-                await delay(5000)
-                await addPrintRequestLog(requestData.document_id)
-                    .then(() => {
-                        console.log("addPrintRequestLog fulfilled")
-                    })
-                    .catch(reason => {
-                        console.log("addPrintRequestLog rejected")
+
+        if (await documentFound()) {
+            await addPrintRequestLog(requestData.document_id)
+                .then(() => {
+                    console.log("addPrintRequestLog fulfilled")
+                })
+                .catch(reason => {
+                    console.log("addPrintRequestLog rejected")
+                    console.log(reason)
+                })
+
+            /**
+             * Loops pin attempts requests until the script finds one
+             * MaxAPITicks defines the time out before the request is deleted
+             * Max pin Attempts defines how many trys the user can have before the file is deleted
+             */
+            do {
+
+                /**
+                 * Loops pin attempts on API and increment ticks
+                 */
+                do {
+                    console.log("pin attempts = " + pinAttempts)
+                    console.log("pinAPITick = " + pinAPITick)
+                    pinAPITick++
+                    if (pinAttempts <= maxPinAttempts && pinAPITick <= maxPinAPITicks) {
+                        await findPinCode()
+                            .then(() => {
+                                console.log("findPinCode fulfilled")
+                            })
+                            .catch(reason => {
+                                console.log("findPinCode rejected")
+                                console.log(reason)
+                            })
+                    } else {
+                        pinTimeOut = true
+                    }
+                } while (!pinCodeFound && !pinTimeOut)
+
+                if (pinCodeFound) {
+
+                    await addPinAttemptLog().then(() => {
+                        console.log("addPinAttemptLog fulfilled")
+                    }).catch(reason => {
+                        console.log("addPinAttemptLog rejected")
                         console.log(reason)
                     })
-            } catch (e) {
-                console.log(e)
-            }
 
-            do {
-                try {
-                    do {
-                        console.log("pin attempts = " + pinAttempts)
-                        console.log("pinAPITick = " + pinAPITick)
-                        pinAPITick++
-                        if (pinAttempts <= maxPinAttempts && pinAPITick <= maxPinAPITicks) {
-                            await findPinCode()
-                                .then(() => {
-                                    console.log("findPinCode fulfilled")
-                                })
-                                .catch(reason => {
-                                    console.log("findPinCode rejected")
-                                    console.log(reason)
-                                })
-                        } else {
-                            pinTimeOut = true
-                        }
-                    } while (!pinCodeFound && !pinTimeOut)
-                } catch (e) {
-                    console.log(e)
-                }
-                if (pinCodeFound) {
-                    try {
-                        await addPinAttemptLog().then(() => {
-                            console.log("addPinAttemptLog fulfilled")
-                        }).catch(reason => {
-                            console.log("addPinAttemptLog rejected")
-                            console.log(reason)
+
+                    await processFile()
+                        .then(()=>{
+                            console.log("processFile fulfilled")
+
                         })
-                    } catch (e) {
-                        console.log(e)
-                    }
-
-                    try {
-                        await decryptFile().then(() => {
-                            console.log("decryptFile fulfilled")
-
-                        }).catch(() => {
-                            console.log("decryptFile rejected")
+                        .catch(()=>{
+                            console.log("processFile rejected")
                         })
-                    } catch (e) {
-                        console.log(e)
-                    }
-                    if (fileDecrypted) {
-                        try {
-                            printFile()
-                        } catch (e) {
-                            console.log(e)
-                            printSuccess = false
-                        }
-                    }
+
 
                 } else {
                     if (pinTimeOut) {
                         if (pinAttempts >= maxPinAttempts) {
                             console.log("Max Pin attempts reached - Deleting file")
-                            try {
-                                await deleteFile().then(() => {
-                                    console.log("deleteFile fulfilled")
-                                }).catch(() => {
-                                    console.log("deleteFile rejected")
-                                })
 
-                            } catch (e) {
-                                console.log(e)
-                            }
+                            await deleteFile().then(() => {
+                                console.log("deleteFile fulfilled")
+                            }).catch(() => {
+                                console.log("deleteFile rejected")
+                            })
+
                         } else if (pinAPITick >= maxPinAPITicks) {
                             console.log("Pin TimeOut - Deleting request")
-                            try {
-                                await deleteRequest(requestData.id)
-                                    .then(() => {
-                                        console.log("deleteRequest fulfilled")
-                                    })
-                                    .catch(() => {
-                                        console.log("deleteRequest rejected")
-                                    })
-                            } catch (e) {
-                                console.log(e)
-                            }
+
+                            await deleteRequest(requestData.id)
+                                .then(() => {
+                                    console.log("deleteRequest fulfilled")
+                                })
+                                .catch(() => {
+                                    console.log("deleteRequest rejected")
+                                })
                         }
                     }
                 }
@@ -655,13 +659,13 @@ async function mainScript2() {
             if (printSuccess) {
                 await deleteFile()
                     .then(()=>{
-                    console.log("file deleted")
-                })
+                        console.log("file deleted")
+                    })
                     .catch(()=>{
                         console.log("deleteFileRejected")})
                 await updateInkLevel(documentData.page_count)
                     .then(()=>{
-                    console.log("updateInkLevel fulfilled")})
+                        console.log("updateInkLevel fulfilled")})
                     .catch(()=>{
                         console.log("updateInkLevel rejected")
                     })
